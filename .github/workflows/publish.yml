@@ -54,9 +54,10 @@ jobs:
       - name: Package binary and licenses
         run: |
           cp LICENSE .state/dist/LICENSE
-          tar -czf ".state/decision-${SOURCE_TAG#v}-$TARGET.tar.gz" -C .state/dist decision LICENSE THIRD_PARTY_NOTICES.txt
+          mkdir release-artifacts
+          tar -czf "release-artifacts/decision-${SOURCE_TAG#v}-$TARGET.tar.gz" -C .state/dist decision LICENSE THIRD_PARTY_NOTICES.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: decision-${{ matrix.target }}
-          path: .state/decision-*.tar.gz
+          path: release-artifacts/decision-*.tar.gz
           if-no-files-found: error
