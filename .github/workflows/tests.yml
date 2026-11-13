@@ -1,0 +1,37 @@
+name: Test Homebrew formula
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: Homebrew/actions/setup-homebrew@c262868c096d909fc278daa87ed9772967331ea3 # 2026.11.02.1
+        id: brew
+        with:
+          token: ${{ github.token }}
+      - name: Audit, install, and test
+        working-directory: ${{ steps.brew.outputs.repository-path }}
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          if [[ ! -f Formula/decision.rb ]]; then
+            exit 0
+          fi
+          brew style Formula/decision.rb
+          brew audit --strict rolandkakonyi/tap/decision
+          brew trust --formula rolandkakonyi/tap/decision
+          brew install --build-from-source rolandkakonyi/tap/decision
+          brew test rolandkakonyi/tap/decision

@@ -1,0 +1,62 @@
+name: Build Decision release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Decision release tag
+        required: true
+        default: v0.9.0
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos-arm64
+            arch: arm64
+          - os: ubuntu-latest
+            target: linux-x86_64
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      SOURCE_TAG: ${{ inputs.tag }}
+      TARGET: ${{ matrix.target }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Validate release tag and host
+        run: |
+          [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rolandkakonyi/decision
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.14'
+          enable-cache: true
+      - name: Build and verify standalone
+        run: |
+          version="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          test "$SOURCE_TAG" = "v$version"
+          uv sync --locked --group build
+          uv run --locked --group build python scripts/build_standalone.py --output .state/dist
+          .state/dist/decision skill --output skills/decision --check
+          DECISION_TEST_EXECUTABLE="$PWD/.state/dist/decision" uv run --locked --group build python -m unittest discover -s tests -p test_standalone.py -v
+          DECISION_TEST_EXECUTABLE="$PWD/.state/dist/decision" uv run --locked python -m unittest discover -s tests -p 'test_*mcp.py' -v
+      - name: Package binary and licenses
+        run: |
+          cp LICENSE .state/dist/LICENSE
+          tar -czf ".state/decision-${SOURCE_TAG#v}-$TARGET.tar.gz" -C .state/dist decision LICENSE THIRD_PARTY_NOTICES.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: decision-${{ matrix.target }}
+          path: .state/decision-*.tar.gz
+          if-no-files-found: error
