@@ -30,8 +30,8 @@ jobs:
           if [[ ! -f Formula/decision.rb ]]; then
             exit 0
           fi
+          brew trust --formula rolandkakonyi/tap/decision
           brew style Formula/decision.rb
           brew audit --strict rolandkakonyi/tap/decision
-          brew trust --formula rolandkakonyi/tap/decision
           brew install --build-from-source rolandkakonyi/tap/decision
           brew test rolandkakonyi/tap/decision
