@@ -35,12 +35,16 @@ jobs:
           brew audit --strict rolandkakonyi/tap/decision
           version="$(brew info --json=v2 rolandkakonyi/tap/decision | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: rolandkakonyi/decision
-          ref: v${{ steps.formula.outputs.version }}
-          path: .state/decision-tests
-          persist-credentials: false
+      - name: Fetch matching upstream test fixtures
+        env:
+          UPSTREAM_TAG: v${{ steps.formula.outputs.version }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.state/decision-tests"
+          curl --fail --silent --show-error --location \
+            "https://github.com/rolandkakonyi/decision/archive/refs/tags/$UPSTREAM_TAG.tar.gz" \
+            --output "$RUNNER_TEMP/decision-tests.tar.gz"
+          tar -xzf "$RUNNER_TEMP/decision-tests.tar.gz" \
+            -C "$GITHUB_WORKSPACE/.state/decision-tests" --strip-components=1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: '3.14'
