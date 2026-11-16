@@ -11,27 +11,72 @@ permissions:
 
 jobs:
   formula:
+    name: ${{ matrix.scenario }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
+        scenario: [fresh, upgrade]
     runs-on: ${{ matrix.os }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
     steps:
       - uses: Homebrew/actions/setup-homebrew@c262868c096d909fc278daa87ed9772967331ea3 # 2026.11.02.1
         id: brew
         with:
           token: ${{ github.token }}
-      - name: Audit, install, and test
+      - name: Audit formula and select upstream tests
+        id: formula
         working-directory: ${{ steps.brew.outputs.repository-path }}
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: |
-          if [[ ! -f Formula/decision.rb ]]; then
-            exit 0
-          fi
           brew trust --formula rolandkakonyi/tap/decision
           brew style Formula/decision.rb
           brew audit --strict rolandkakonyi/tap/decision
-          brew install --build-from-source rolandkakonyi/tap/decision
+          version="$(brew info --json=v2 rolandkakonyi/tap/decision | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rolandkakonyi/decision
+          ref: v${{ steps.formula.outputs.version }}
+          path: .state/decision-tests
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.14'
+          enable-cache: true
+          cache-dependency-glob: .state/decision-tests/uv.lock
+      - name: Install upstream test dependencies
+        run: uv sync --locked --project "$GITHUB_WORKSPACE/.state/decision-tests"
+      - name: Fresh installation or upgrade from v0.9.0
+        working-directory: ${{ steps.brew.outputs.repository-path }}
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          EXPECTED_VERSION: ${{ steps.formula.outputs.version }}
+        run: |
+          if [[ "$SCENARIO" == upgrade ]]; then
+            candidate="$(mktemp)"
+            cp Formula/decision.rb "$candidate"
+            trap 'cp "$candidate" Formula/decision.rb' EXIT
+            curl --fail --silent --show-error --location \
+              https://raw.githubusercontent.com/rolandkakonyi/homebrew-tap/c82f1115f793ac62eaf5256588d959911c4d8130/Formula/decision.rb \
+              --output Formula/decision.rb
+            brew trust --formula rolandkakonyi/tap/decision
+            brew install --build-from-source rolandkakonyi/tap/decision
+            test "$(decision --version)" = 'decision 0.9.0'
+            cp "$candidate" Formula/decision.rb
+            brew trust --formula rolandkakonyi/tap/decision
+            brew upgrade rolandkakonyi/tap/decision
+          else
+            test ! -d "$(brew --cellar)/decision"
+            brew install --build-from-source rolandkakonyi/tap/decision
+          fi
+          test "$(decision --version)" = "decision $EXPECTED_VERSION"
           brew test rolandkakonyi/tap/decision
+          brew linkage --test rolandkakonyi/tap/decision
+      - name: Verify installed CLI, MCP, and runtime plugins without inference
+        run: |
+          upstream="$GITHUB_WORKSPACE/.state/decision-tests"
+          DECISION_TEST_EXECUTABLE="$(brew --prefix decision)/bin/decision"
+          export DECISION_TEST_EXECUTABLE
+          uv run --locked --project "$upstream" python -m unittest discover -s "$upstream/tests" -p 'test_*mcp.py' -v

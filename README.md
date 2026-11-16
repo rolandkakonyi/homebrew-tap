@@ -5,12 +5,14 @@ server for typed judgments over text and images:
 
 ```bash
 brew install rolandkakonyi/tap/decision
+brew upgrade rolandkakonyi/tap/decision
 ```
 
-The standalone package supports macOS ARM64 and Linux x86_64 and includes its
-Python runtime and third-party license notices. TypeSafe, OpenAI, Cloudflare,
-and Gemini providers are built in. Third-party provider extensions require
-Decision's Python installation instead.
+The native executable supports macOS ARM64 and Linux x86_64. TypeSafe, OpenAI,
+Cloudflare, and Gemini providers are built in; no Python or Rust installation
+is required. Third-party providers run executable commands in any language.
+Users supply any runtime declared by a plugin. License notices and build
+metadata are installed under `brew --prefix decision` in `share/decision`.
 
 Validate without inference:
 
@@ -20,23 +22,32 @@ decision noul 'Is this text?' --state 'Hello' --dry-run
 brew test rolandkakonyi/tap/decision
 ```
 
-Provider queries require your own credentials and are billed by the provider.
-For usage, images, MCP setup, and Python extensions, see the
+Install a trusted runtime provider and select it by name:
+
+```bash
+decision providers install /path/to/provider-package
+decision providers list
+decision noul 'Is this text?' --state 'Hello' --provider acme
+```
+
+Packages contain `decision-provider.json` and own their setup commands and
+dependencies. Setup runs only during explicit installation or update.
+`decision mcp` runs inference; `decision mcp --management` exposes provider
+installation, listing, and removal instead. Provider queries require your own
+credentials and are billed by the provider. See the
 [Decision documentation](https://github.com/rolandkakonyi/decision#readme).
 
 ## Maintaining the formula
 
-Binaries are built from an existing upstream release tag and tested natively
-before packaging. Run the build workflow for a release:
+Decision's upstream CI publishes native release archives and `SHA256SUMS`.
+Update `Formula/decision.rb` with the version, platform URLs, and matching
+checksums from that published release. Never replace an archive or move a tag.
+The tap consumes those artifacts without rebuilding them.
 
-```bash
-gh workflow run publish.yml --repo rolandkakonyi/homebrew-tap -f tag=v0.9.0
-```
-
-Download both workflow artifacts, publish the archives and their SHA-256 sums
-on the matching upstream Decision release, then update `Formula/decision.rb`
-with the release version, URLs, and checksums. Never replace a released archive
-or move a release tag. Formula CI audits, installs, and tests on both platforms.
+Formula CI audits, installs, and tests on macOS and Linux. Each platform runs a
+fresh installation and an upgrade from v0.9.0, then exercises the installed
+CLI, MCP server, and runtime-provider lifecycle against the matching upstream
+release's local fixtures. Tests require no provider credentials or paid inference.
 
 This tap is licensed under [MIT](LICENSE). Decision and its bundled dependencies
 retain their own licenses.
